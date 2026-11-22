@@ -1,3 +1,15 @@
+let assert label condition =
+  if condition then
+    true
+  else {
+    eprint
+      (str_concat
+        "FAIL: "
+        (str_concat label "\n"));
+    exit 1;
+    false
+  };
+  
 let append xs ys =
   match xs {
     [] =>
