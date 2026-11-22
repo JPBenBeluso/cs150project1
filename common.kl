@@ -1,0 +1,84 @@
+let append xs ys =
+  match xs {
+    [] =>
+      ys;
+    x :: rest =>
+      x :: (append rest ys);
+  };
+
+let map f xs =
+  match xs {
+    [] =>
+      [];
+    x :: rest =>
+      (f x) :: map f rest;
+  };
+
+let fst xs =
+  match xs {
+    [] =>
+      -1;
+    x :: rest =>
+      x;
+  };
+
+let reverse xs =
+  match xs {
+    [] =>
+      [];
+    x :: rest =>
+      append (reverse rest) [x];
+  };
+  
+let last xs =
+  fst (reverse xs);
+
+let init xs =
+  match (reverse xs) {
+    x :: rest =>
+      reverse rest;
+  };
+
+let not b =
+  if b then
+    false
+  else
+    true;
+    
+let all bs =
+  match bs {
+    [] =>
+      true;
+    b :: rest =>
+      if not b then
+        false
+      else
+        all rest;
+  };
+
+let any bs =
+  match bs {
+    [] =>
+      false;
+    b :: rest =>
+      if b then
+        true
+      else
+        any rest;
+  };
+
+let length xs =
+  match xs {
+    [] =>
+      0;
+    _ :: rest =>
+      1 + length rest;
+  };
+
+let zip xs ys =
+  match xs, ys {
+    x :: xrest, y :: yrest =>
+      [x, y] :: zip xrest yrest;
+    _, _ =>
+      [];
+  };
