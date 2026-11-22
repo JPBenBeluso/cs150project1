@@ -1,12 +1,5 @@
 include "common.kl";
-
-type Type
-  = NumberType
-  | BoolType
-  | StringType
-  | NullType
-  | FnType [Type] Type
-  | RecordType [(String Type)];
+include "syntax.kl"
 
 let typePairEquals pair =
   typeEquals (fst pair) (last pair);
@@ -30,9 +23,6 @@ let typeEquals left right =
     _, _ =>
       false;
   };
-
-type alias Binding =
-  {name: String, typ: Type};
 
 # env :: [[Binding]]
 let emptyEnv = [[]];
@@ -66,23 +56,6 @@ let lookupScope scope name =
 # lookup :: [[Binding]] -> String -> Option Type
 let lookup env name =
   lookupScope (last env) name;
-
-type Op
-  = NegateOp
-  | NotOp
-  | AddOp
-  | SubOp
-  | MulOp
-  | DivOp
-  | ConcatOp
-  | LtOp
-  | LteOp
-  | GtOp
-  | GteOp
-  | EqOp
-  | NotEqOp
-  | AndOp
-  | OrOp;
 
 type Expr
   = NumberExpr Float
