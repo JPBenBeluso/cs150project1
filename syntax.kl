@@ -48,7 +48,14 @@ type Expr
   | FnExpr [Binding] Type Expr
   | AppExpr Expr Expr
   | RecordExpr [FieldExpr]
-  | FieldAccessExpr Expr String
-  | LetExpr String (Option Type) Expr
-  | IfExpr Bool Expr Expr
-  | While Bool Expr;
+  | FieldAccessExpr Expr String;
+
+type Stmt
+  = LetStmt String (Option Type) Expr
+  | IfStmt Expr Stmt (Option Stmt)
+  | WhileStmt Expr Stmt
+  | BlockStmt [Stmt]
+  | ExprStmt Expr;
+
+type Program =
+  Program [Stmt];
