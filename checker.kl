@@ -1,5 +1,18 @@
 include "common.kl";
-include "syntax.kl"
+
+type alias Binding =
+  {name: String, typ: Type};
+
+type alias FieldType =
+  {name: String, typ: Type};
+
+type Type
+  = NumberType
+  | BoolType
+  | StringType
+  | NullType
+  | FnType [Type] Type
+  | RecordType [FieldType];
 
 let typePairEquals pair =
   typeEquals (fst pair) (last pair);
@@ -35,9 +48,9 @@ let push env =
 let local env =
   map (fn binding => binding.name) (last env);
 
-# addBinding :: [[Binding]] -> String -> Type -> [[Binding]]
-let addBinding env name typ =
-  let newInnermost = append (last env) [{name = name, typ = typ}]
+# addBinding :: [[Binding]] -> Binding -> [[Binding]]
+let addBinding env binding =
+  let newInnermost = append (last env) [binding]
     in
   append (init env) [newInnermost]; 
 
@@ -57,6 +70,26 @@ let lookupScope scope name =
 let lookup env name =
   lookupScope (last env) name;
 
+type Op
+  = NegateOp
+  | NotOp
+  | AddOp
+  | SubOp
+  | MulOp
+  | DivOp
+  | ConcatOp
+  | LtOp
+  | LteOp
+  | GtOp
+  | GteOp
+  | EqOp
+  | NotEqOp
+  | AndOp
+  | OrOp;
+
+type alias FieldExpr =
+  {name: String, expr: Expr};
+  
 type Expr
   = NumberExpr Float
   | BoolExpr Bool
@@ -65,7 +98,65 @@ type Expr
   | VarExpr String
   | AssignExpr String Expr
   | BinExpr Op Expr Expr
-  | UnaryExpr Op Expr;
+  | UnaryExpr Op Expr
+  | FnExpr [Binding] Type Expr
+  | AppExpr Expr Expr
+  | RecordExpr [FieldExpr]
+  | FieldAccessExpr Expr String;
+
+let isWellFormedType typ =
+  match typ {
+    NumberType => true;
+    BoolType => true;
+    StringType => true;
+    NullType => true;
+    FnType params ret =>
+      all (map isWellFormedType params) && isWellFormedType typ;
+    RecordType fields =>
+      isDistinct (map (fn binding => binding.name) fields)
+      && all (map isWellFormedType (map (fn binding => binding.typ) fields));
+  };
+
+let addParams env params =
+  let newEnv = push env
+    in
+  let loop ps resEnv =
+    match ps {
+      [] =>
+        resEnv;
+      bind :: rest =>
+        loop rest (addBinding resEnv bind);
+    }
+    in
+  loop params newEnv;
+
+# collectTypes :: [Option Type] -> Option [Type]
+let collectTypes xs =
+  match xs {
+    [] =>
+      Some [];
+    Some t :: rest =>
+      match collectTypes rest {
+        Some ts => Some (t :: ts);
+        None => None;
+      };
+    None :: rest =>
+      None;
+  };
+
+# buildFieldTypes :: [String] -> [Type] -> [FieldType]
+let buildFieldTypes names types =
+  let loop pairs =
+    match pairs {
+      [] =>
+        [];
+      x :: rest =>
+        let name :: typ :: _ = x
+          in
+        { name = name, typ = typ } :: loop rest;
+    }
+    in
+  loop (zip names types);
 
 # typeOf :: Expr -> [[Binding]] -> Option Type 
 let typeOf expr env =
@@ -142,4 +233,106 @@ let typeOf expr env =
         _, _, _ =>
           None;
       };
+      FnExpr params returnType body =>
+        let distinct = isDistinct (map (fn binding => binding.name) params)
+          in
+        let paramTypes = map (fn binding => binding.typ) params
+          in
+        let wellFormed = all (map isWellFormedType paramTypes) && isWellFormedType returnType
+          in
+        if distinct && wellFormed then
+          let newEnv = addParams env params
+            in
+          match typeOf body newEnv {
+            Some bodyType =>
+              if typeEquals bodyType returnType then
+                Some (FnType paramTypes returnType)
+              else
+                None;
+            None =>
+              None;
+          }
+        else
+          None;
+      AppExpr function args =>
+        match typeOf function env {
+          Some (FnType paramTypes returnType) =>
+            let argSomeTypes = map (fn arg => typeOf arg env) args
+              in
+            let hasNone =
+              any (
+                map
+                  (fn v =>
+                    match v {
+                      None => true;
+                      Some _ => false;
+                    })
+                  argSomeTypes
+              )
+              in
+            if (length args != length paramTypes) || hasNone then
+              None
+            else
+              let argTypes =
+                map
+                  (fn v =>
+                    match v {
+                      Some t => t;
+                      _ => NumberType; # unreachable fallback; see note below
+                    })
+                  argSomeTypes
+                in
+              let matches =
+                all (
+                  map
+                    (fn pair => typeEquals (fst pair) (last pair))
+                    (zip paramTypes argTypes)
+                )
+                in
+              if matches then
+                Some returnType
+              else
+                None;
+          _ =>
+            None;
+        };
+      RecordExpr fields =>
+        let fieldNames = map (fn f => f.name) fields
+          in
+        if not (isDistinct fieldNames) then
+          None
+        else
+          let fieldTypes = collectTypes (map (fn f => typeOf f.expr env) fields)
+            in
+          # let _ = outputLn(show(fieldTypes)) in
+          match fieldTypes {
+            Some types =>
+              if length types != length fieldNames then
+                None
+              else
+                Some (RecordType (buildFieldTypes fieldNames types));
+            None =>
+              None;
+          };
+      FieldAccessExpr expr name =>
+        match typeOf expr env {
+          Some (RecordType fieldTypes) =>
+            let loop fields =
+              match fields {
+                [] =>
+                  None;
+                field :: rest =>
+                  if field.name == name then
+                    Some field.typ
+                  else
+                    loop rest;
+              }
+              in
+            loop fieldTypes;
+          _ =>
+            None;
+        };
+      _ => 
+        None;
   };
+
