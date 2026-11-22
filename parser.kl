@@ -1,0 +1,130 @@
+include "syntax.kl";
+
+let skip_comment_line input = 
+  let len = str_len input
+    in
+  if (len == 0) then 
+    None # means comment was the very last line
+  else
+  let curr = str_at input 0
+    in
+  if (curr == "\n") then
+    str_slice input 1 len
+  else
+    Some (skip_comment_line (str_slice input 1 len));
+
+let emptyParser input = 
+  let len = str_len input
+    in
+  if (len == 0) then 
+    Failed
+  else
+  let curr = str_at input 0
+    in
+  let rem = str_slice input 1 len
+    in
+  if (curr == " " || curr == "\n" || curr == "\t") then 
+    Parsed unit rem
+  else
+    Failed;
+
+let commentParser input =
+  let len = str_len input
+    in
+  if (len == 0) then 
+    Failed
+  else
+  let curr = str_at input 0
+    in
+  if len > 2 then 
+    let next = str_at input 1
+      in
+    if (curr == "/" && next == "/") then 
+      match (skip_comment_line input) {
+        Some rem =>
+          Parsed unit rem;
+        None =>
+          Failed; # end of file
+      }
+      
+    else
+      Failed
+  else
+    Failed;
+
+let repeatParser parser res input = 
+  let current_parsed = parser input
+    in
+  match current_parsed {
+    Parsed _ suff =>
+      repeatParser parser res suff;
+    Failed =>
+      Parsed res input;
+  };
+
+# this assumes that we are inside of a string in miniTS
+let escapesParser input = 
+  let len = str_len input
+    in
+  if (len == 0) then 
+    Failed
+  else
+  let curr = str_at input 0
+    in
+  let rem = str_slice input 1 len
+    in
+  if (curr == "\"" || curr == "\\" || curr == "\n" || curr == "\t" || curr == "\r") then
+    Parsed (StringExpr curr) rem
+  else
+    Failed;
+
+let identifierParserStart input = 
+  let len = str_len input
+    in
+  if (len == 0) then 
+    Failed
+  else
+  let curr = str_at input 0
+    in
+  let ascii = str_ord curr
+    in
+  let rem = str_slice input 1 len
+    in
+  if ((65 <= ascii && ascii <= 90) || (97 <= ascii && ascii <= 122) || ascii == 95) then # [A-Za-z_]
+    Parsed curr rem
+  else
+    Failed;
+
+let identifierParserRest input acc = 
+  let len = str_len input
+    in
+  if (len == 0) then 
+    evaluateAcc acc "" "" # end of file
+  else
+  let curr = str_at input 0
+    in
+  let ascii = str_ord curr
+    in
+  let rem = str_slice input 1 len
+    in
+  if ((48 <= ascii && ascii <= 57) || (65 <= ascii && ascii <= 90) || (97 <= ascii && ascii <= 122) || ascii == 95) then # [A-Za-z_]
+    identifierParserRest rem (str_concat acc curr)
+  else
+    evaluateAcc acc curr rem;
+
+# made into function for purposes of checking end of file and such
+let evaluateAcc acc curr rem =
+  if (acc == "let" || acc == "if" || acc == "else" || acc == "while" || acc == "true" || acc == "false" || acc == "null" || acc == "number" || acc == "boolean" || acc == "string") then
+    Failed
+  else
+    Parsed (VarExpr acc) (str_concat curr rem); 
+
+let identifierParser input = 
+  let starter = identifierParserStart input
+    in
+  match starter {
+    Parsed s rem =>
+      identifierParserRest rem s; # either fails or returns the parsed
+    Failed =>
+      Failed;
+  };
