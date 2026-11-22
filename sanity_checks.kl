@@ -1,0 +1,62 @@
+include "checker.kl";
+
+# sanity checks for part 3
+
+assert "Empty program"
+  (checkProgram (Program []) 
+  == Ok unit);
+
+assert "Valid variable declarations"
+  (checkProgram (Program [
+    LetStmt "x" None (NumberExpr 10),
+    LetStmt "y" None (VarExpr "x")
+  ]) == Ok unit);
+
+assert "Unbound variable"
+  (checkProgram (Program [
+    LetStmt "x" None (VarExpr "unknown")
+  ]) == Error UnboundVariable);
+
+assert "Duplicate local declaration"
+  (checkProgram (Program [
+    LetStmt "x" None (NumberExpr 10),
+    LetStmt "x" None (BoolExpr true)
+  ]) == Error DuplicateDeclaration);
+
+assert "Valid block with a local declaration"
+  (checkProgram (Program [
+    BlockStmt [
+      LetStmt "x" None (NumberExpr 10)
+    ]
+  ]) == Ok unit);
+
+assert "Block variable does not leak"
+  (checkProgram (Program [
+    BlockStmt [
+      LetStmt "x" None (NumberExpr 10)
+    ],
+    LetStmt "y" None (VarExpr "x")
+  ]) == Error UnboundVariable);
+
+assert "Valid if-else statement"
+  (checkProgram (Program [
+    IfStmt
+      (BoolExpr true)
+      (BlockStmt [])
+      (Some (BlockStmt []))
+  ]) == Ok unit);
+
+assert "Non-Boolean if condition"
+  (checkProgram (Program [
+    IfStmt
+      (NumberExpr 10)
+      (BlockStmt [])
+      None
+  ]) == Error ConditionNotBool);
+
+assert "Invalid expression statement"
+  (checkProgram (Program [
+    ExprStmt (VarExpr "missing")
+  ]) == Error UnboundVariable);
+
+outputLn("Sanity check done!");
