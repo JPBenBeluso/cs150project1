@@ -2,6 +2,29 @@ type Parser a
   = Failed 
   | Parsed a String;
 
+type Result a e
+  = Ok a
+  | Error e;
+
+type TypeError
+  = UnboundVariable
+  | TypeMismatch
+  | InvalidOperands
+  | DuplicateParameter
+  | DuplicateField
+  | DuplicateDeclaration
+  | IllFormedType
+  | NotAFunction
+  | ArityMismatch
+  | NotARecord
+  | UnknownField
+  | ConditionNotBool
+  | RecordShapeMismatch
+  | UnsupportedExpression
+  | UnsupportedStatement;
+
+type alias TypeEnv = [[Binding]];
+  
 type alias Binding =
   {name: String, typ: Type};
 

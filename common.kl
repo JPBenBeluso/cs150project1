@@ -82,3 +82,31 @@ let zip xs ys =
     _, _ =>
       [];
   };
+
+let isIn xs v =
+  match xs {
+    [] =>
+      false;
+    x :: rest =>
+      if x == v then
+        true
+      else
+        isIn rest v;
+  };
+
+let dedup xs =
+  let loop ys seen =
+    match ys {
+      [] =>
+        seen;
+      y :: rest =>
+        if isIn seen y then
+          loop rest seen
+        else
+          loop rest (append seen [y]);
+    }
+    in
+  loop xs [];
+
+let isDistinct xs =
+  length (dedup xs) == length xs;

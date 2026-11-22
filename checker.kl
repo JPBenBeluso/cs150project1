@@ -1,22 +1,12 @@
 include "common.kl";
+include "syntax.kl";
 
-type alias Binding =
-  {name: String, typ: Type};
-
-type alias FieldType =
-  {name: String, typ: Type};
-
-type Type
-  = NumberType
-  | BoolType
-  | StringType
-  | NullType
-  | FnType [Type] Type
-  | RecordType [FieldType];
-
+# typePairEquals :: [Type] -> Bool
 let typePairEquals pair =
+  # pair is a tuple [Type, Type]
   typeEquals (fst pair) (last pair);
-  
+
+# typeEquals :: Type -> Type -> Bool
 let typeEquals left right =
   match left, right {
     NumberType, NumberType =>
@@ -37,18 +27,18 @@ let typeEquals left right =
       false;
   };
 
-# env :: [[Binding]]
+# env :: TypeEnv
 let emptyEnv = [[]];
 
-# push :: [[Binding]] -> [[Binding]]
+# push :: TypeEnv -> TypeEnv
 let push env =
   append env emptyEnv;
 
-# local :: [[Binding]] -> [String]
+# local :: TypeEnv -> [String]
 let local env =
   map (fn binding => binding.name) (last env);
 
-# addBinding :: [[Binding]] -> Binding -> [[Binding]]
+# addBinding :: TypeEnv -> Binding -> TypeEnv
 let addBinding env binding =
   let newInnermost = append (last env) [binding]
     in
@@ -66,43 +56,9 @@ let lookupScope scope name =
         lookupScope rest name;
   };
 
-# lookup :: [[Binding]] -> String -> Option Type
+# lookup :: TypeEnv -> String -> Option Type
 let lookup env name =
   lookupScope (last env) name;
-
-type Op
-  = NegateOp
-  | NotOp
-  | AddOp
-  | SubOp
-  | MulOp
-  | DivOp
-  | ConcatOp
-  | LtOp
-  | LteOp
-  | GtOp
-  | GteOp
-  | EqOp
-  | NotEqOp
-  | AndOp
-  | OrOp;
-
-type alias FieldExpr =
-  {name: String, expr: Expr};
-  
-type Expr
-  = NumberExpr Float
-  | BoolExpr Bool
-  | StringExpr String
-  | NullExpr
-  | VarExpr String
-  | AssignExpr String Expr
-  | BinExpr Op Expr Expr
-  | UnaryExpr Op Expr
-  | FnExpr [Binding] Type Expr
-  | AppExpr Expr Expr
-  | RecordExpr [FieldExpr]
-  | FieldAccessExpr Expr String;
 
 let isWellFormedType typ =
   match typ {
@@ -117,6 +73,7 @@ let isWellFormedType typ =
       && all (map isWellFormedType (map (fn binding => binding.typ) fields));
   };
 
+# addParams :: TypeEnv -> [Binding] -> TypeEnv
 let addParams env params =
   let newEnv = push env
     in
@@ -129,20 +86,6 @@ let addParams env params =
     }
     in
   loop params newEnv;
-
-# collectTypes :: [Option Type] -> Option [Type]
-let collectTypes xs =
-  match xs {
-    [] =>
-      Some [];
-    Some t :: rest =>
-      match collectTypes rest {
-        Some ts => Some (t :: ts);
-        None => None;
-      };
-    None :: rest =>
-      None;
-  };
 
 # buildFieldTypes :: [String] -> [Type] -> [FieldType]
 let buildFieldTypes names types =
@@ -158,181 +101,325 @@ let buildFieldTypes names types =
     in
   loop (zip names types);
 
-# typeOf :: Expr -> [[Binding]] -> Option Type 
-let typeOf expr env =
-  match expr {
-    NumberExpr _ =>
-      Some NumberType;
-    BoolExpr _ =>
-      Some BoolType;
-    StringExpr _ =>
-      Some StringType;
-    NullExpr =>
-      Some NullType;
-    VarExpr name =>
-      lookup env name;
-    AssignExpr name e =>
-      match lookup env name, typeOf e env {
-        Some t1, Some t2 =>
-          if typeEquals t1 t2 then
-            Some t1
-          else
-            None;
-        _, _ =>
-          None;
-      };
-    UnaryExpr op e =>
-      match op, typeOf e env {
-        NegateOp, NumberType =>
-          Some NumberType;
-        NotOp, BoolType =>
-          Some BoolType;
-        _, _ =>
-          None;
-      };
-    BinExpr op e1 e2 =>
-      match op, typeOf e1 env, typeOf e2 env {
-        AddOp, NumberType, NumberType =>
-          Some NumberType;
-        SubOp, NumberType, NumberType =>
-          Some NumberType;
-        MulOp, NumberType, NumberType =>
-          Some NumberType;
-        DivOp, NumberType, NumberType =>
-          Some NumberType;
-        ConcatOp, StringType, StringType =>
-          Some StringType;
-        LtOp, NumberType, NumberType =>
-          Some NumberType;
-        LteOp, NumberType, NumberType =>
-          Some NumberType;
-        GtOp, NumberType, NumberType =>
-          Some NumberType;
-        GteOp, NumberType, NumberType =>
-          Some BoolType;
-        EqOp, NumberType, NumberType =>
-          Some BoolType;
-        EqOp, BoolType, BoolType =>
-          Some BoolType;
-        EqOp, StringType, StringType =>
-          Some BoolType;
-        EqOp, NullType, NullType =>
-          Some BoolType;
-        NotEqOp, NumberType, NumberType =>
-          Some BoolType;
-        NotEqOp, BoolType, BoolType =>
-          Some BoolType;
-        NotEqOp, StringType, StringType =>
-          Some BoolType;
-        NotEqOp, NullType, NullType =>
-          Some BoolType;
-        AndOp, BoolType, BoolType =>
-          Some BoolType;
-        OrOp, BoolType, BoolType =>
-          Some BoolType;
-        _, _, _ =>
-          None;
-      };
-      FnExpr params returnType body =>
-        let distinct = isDistinct (map (fn binding => binding.name) params)
-          in
-        let paramTypes = map (fn binding => binding.typ) params
-          in
-        let wellFormed = all (map isWellFormedType paramTypes) && isWellFormedType returnType
-          in
-        if distinct && wellFormed then
-          let newEnv = addParams env params
-            in
-          match typeOf body newEnv {
-            Some bodyType =>
-              if typeEquals bodyType returnType then
-                Some (FnType paramTypes returnType)
-              else
-                None;
-            None =>
-              None;
-          }
-        else
-          None;
-      AppExpr function args =>
-        match typeOf function env {
-          Some (FnType paramTypes returnType) =>
-            let argSomeTypes = map (fn arg => typeOf arg env) args
-              in
-            let hasNone =
-              any (
-                map
-                  (fn v =>
-                    match v {
-                      None => true;
-                      Some _ => false;
-                    })
-                  argSomeTypes
-              )
-              in
-            if (length args != length paramTypes) || hasNone then
-              None
-            else
-              let argTypes =
-                map
-                  (fn v =>
-                    match v {
-                      Some t => t;
-                      _ => NumberType; # unreachable fallback; see note below
-                    })
-                  argSomeTypes
-                in
-              let matches =
-                all (
-                  map
-                    (fn pair => typeEquals (fst pair) (last pair))
-                    (zip paramTypes argTypes)
-                )
-                in
-              if matches then
-                Some returnType
-              else
-                None;
-          _ =>
-            None;
-        };
-      RecordExpr fields =>
-        let fieldNames = map (fn f => f.name) fields
-          in
-        if not (isDistinct fieldNames) then
-          None
-        else
-          let fieldTypes = collectTypes (map (fn f => typeOf f.expr env) fields)
-            in
-          # let _ = outputLn(show(fieldTypes)) in
-          match fieldTypes {
-            Some types =>
-              if length types != length fieldNames then
-                None
-              else
-                Some (RecordType (buildFieldTypes fieldNames types));
-            None =>
-              None;
+# collectResults :: [Result a e] -> Result [a] e
+# Result version of collectTypes: first Error wins, otherwise all values in order.
+let collectResults results =
+  match results {
+    [] =>
+      Ok [];
+    r :: rest =>
+      match r {
+        Error err =>
+          Error err;
+        Ok v =>
+          match collectResults rest {
+            Error err =>
+              Error err;
+            Ok vs =>
+              Ok (v :: vs);
           };
-      FieldAccessExpr expr name =>
-        match typeOf expr env {
-          Some (RecordType fieldTypes) =>
-            let loop fields =
-              match fields {
-                [] =>
-                  None;
-                field :: rest =>
-                  if field.name == name then
-                    Some field.typ
-                  else
-                    loop rest;
-              }
-              in
-            loop fieldTypes;
-          _ =>
-            None;
-        };
-      _ => 
-        None;
+      };
   };
 
+# checkExpr :: Expr -> TypeEnv -> Result Type TypeError
+let checkExpr expr env =
+  match expr {
+    NumberExpr _ =>
+      Ok NumberType;
+    BoolExpr _ =>
+      Ok BoolType;
+    StringExpr _ =>
+      Ok StringType;
+    NullExpr =>
+      Ok NullType;
+    VarExpr name =>
+      match lookup env name {
+        Some t =>
+          Ok t;
+        None =>
+          Error UnboundVariable;
+      };
+    AssignExpr name e =>
+      match lookup env name {
+        None =>
+          Error UnboundVariable;
+        Some t1 =>
+          match checkExpr e env {
+            Error err =>
+              Error err;
+            Ok t2 =>
+              if typeEquals t1 t2 then
+                Ok t1
+              else
+                Error TypeMismatch;
+          };
+      };
+    UnaryExpr op e =>
+      match checkExpr e env {
+        Error err =>
+          Error err;
+        Ok t =>
+          match op, t {
+            NegateOp, NumberType =>
+              Ok NumberType;
+            NotOp, BoolType =>
+              Ok BoolType;
+            _, _ =>
+              Error InvalidOperands;
+          };
+      };
+    BinExpr op e1 e2 =>
+      match checkExpr e1 env {
+        Error err =>
+          Error err;
+        Ok t1 =>
+          match checkExpr e2 env {
+            Error err =>
+              Error err;
+            Ok t2 =>
+              match op, t1, t2 {
+                AddOp, NumberType, NumberType =>
+                  Ok NumberType;
+                SubOp, NumberType, NumberType =>
+                  Ok NumberType;
+                MulOp, NumberType, NumberType =>
+                  Ok NumberType;
+                DivOp, NumberType, NumberType =>
+                  Ok NumberType;
+                ConcatOp, StringType, StringType =>
+                  Ok StringType;
+                LtOp, NumberType, NumberType =>
+                  Ok NumberType;
+                LteOp, NumberType, NumberType =>
+                  Ok NumberType;
+                GtOp, NumberType, NumberType =>
+                  Ok NumberType;
+                GteOp, NumberType, NumberType =>
+                  Ok BoolType;
+                EqOp, NumberType, NumberType =>
+                  Ok BoolType;
+                EqOp, BoolType, BoolType =>
+                  Ok BoolType;
+                EqOp, StringType, StringType =>
+                  Ok BoolType;
+                EqOp, NullType, NullType =>
+                  Ok BoolType;
+                NotEqOp, NumberType, NumberType =>
+                  Ok BoolType;
+                NotEqOp, BoolType, BoolType =>
+                  Ok BoolType;
+                NotEqOp, StringType, StringType =>
+                  Ok BoolType;
+                NotEqOp, NullType, NullType =>
+                  Ok BoolType;
+                AndOp, BoolType, BoolType =>
+                  Ok BoolType;
+                OrOp, BoolType, BoolType =>
+                  Ok BoolType;
+                _, _, _ =>
+                  Error InvalidOperands;
+              };
+          };
+      };
+    FnExpr params returnType body =>
+      let distinct = isDistinct (map (fn binding => binding.name) params)
+        in
+      let paramTypes = map (fn binding => binding.typ) params
+        in
+      let wellFormed = all (map isWellFormedType paramTypes) && isWellFormedType returnType
+        in
+      if not distinct then
+        Error DuplicateParameter
+      else if not wellFormed then
+        Error IllFormedType
+      else
+        let newEnv = addParams env params
+          in
+        match checkExpr body newEnv {
+          Ok bodyType =>
+            if typeEquals bodyType returnType then
+              Ok (FnType paramTypes returnType)
+            else
+              Error TypeMismatch;
+          Error err =>
+            Error err;
+        };
+    AppExpr function args =>
+      match checkExpr function env {
+        Ok (FnType paramTypes returnType) =>
+          match collectResults (map (fn arg => checkExpr arg env) args) {
+            Error err =>
+              Error err;
+            Ok argTypes =>
+              if length args != length paramTypes then
+                Error ArityMismatch
+              else
+                let matches =
+                  all (
+                    map
+                      (fn pair => typeEquals (fst pair) (last pair))
+                      (zip paramTypes argTypes)
+                  )
+                  in
+                if matches then
+                  Ok returnType
+                else
+                  Error TypeMismatch;
+          };
+        Ok _ =>
+          Error NotAFunction;
+        Error err =>
+          Error err;
+      };
+    RecordExpr fields =>
+      let fieldNames = map (fn f => f.name) fields
+        in
+      if not (isDistinct fieldNames) then
+        Error DuplicateField
+      else
+        match collectResults (map (fn f => checkExpr f.expr env) fields) {
+          Ok types =>
+            if length types != length fieldNames then
+              Error RecordShapeMismatch
+            else
+              Ok (RecordType (buildFieldTypes fieldNames types));
+          Error err =>
+            Error err;
+        };
+    FieldAccessExpr expr name =>
+      match checkExpr expr env {
+        Ok (RecordType fieldTypes) =>
+          let loop fields =
+            match fields {
+              [] =>
+                Error UnknownField;
+              field :: rest =>
+                if field.name == name then
+                  Ok field.typ
+                else
+                  loop rest;
+            }
+            in
+          loop fieldTypes;
+        Ok _ =>
+          Error NotARecord;
+        Error err =>
+          Error err;
+      };
+    _ =>
+      Error UnsupportedExpression;
+  };
+
+# checkStmt :: Stmt -> TypeEnv -> Result TypeEnv TypeError
+let checkStmt stmt env =
+  match stmt {
+    LetStmt name None expr =>
+      match checkExpr expr env {
+        Ok t =>
+          if isIn (local env) name then
+            Error DuplicateDeclaration
+          else
+            Ok (addBinding env {name = name, typ = t});
+        Error err =>
+          Error err;
+      };
+    LetStmt name (Some t_ann) expr =>
+      match checkExpr expr env {
+        Ok t_exp =>
+          if isIn (local env) name then
+            Error DuplicateDeclaration
+          else if not (typeEquals t_ann t_exp) then
+            Error TypeMismatch
+          else
+            Ok (addBinding env {name = name, typ = t_ann});
+        Error err =>
+          Error err;
+      };
+    ExprStmt expr =>
+      match checkExpr expr env {
+        Ok _ =>
+          Ok env;
+        Error err =>
+          Error err;
+      };
+    BlockStmt stmts =>
+      match checkSeq stmts (push env) {
+        Ok _ =>
+          Ok env;
+        Error err =>
+          Error err;
+      };
+    IfStmt cond yes (Some no) =>
+      # cond : expr; yes, no : blocks
+      match checkExpr cond env {
+        Ok BoolType =>
+          match checkStmt yes env, checkStmt no env {
+            Ok env_1, Ok env_2 =>
+              Ok env;
+            Error err, _ =>
+              Error err;
+            _, Error err =>
+              Error err;
+          };
+        Ok _ =>
+          Error ConditionNotBool;
+        Error err =>
+          Error err;
+      };
+    IfStmt cond yes None =>
+      match checkExpr cond env {
+        Ok BoolType =>
+          match checkStmt yes env {
+            Ok env_1 =>
+              Ok env;
+            Error err =>
+              Error err;
+          };
+        Ok _ =>
+          Error ConditionNotBool;
+        Error err =>
+          Error err;
+      };
+    WhileStmt cond block =>
+      match checkExpr cond env {
+        Ok BoolType =>
+          match checkStmt block env {
+            Ok env_1 =>
+              Ok env;
+            Error err =>
+              Error err;
+          };
+        Ok _ =>
+          Error ConditionNotBool;
+        Error err =>
+          Error err;
+      };
+    _ =>
+      Error UnsupportedStatement;
+  };
+
+# checkSeq :: [Stmt] -> TypeEnv -> Result TypeEnv TypeError
+let checkSeq stmts env =
+  match stmts {
+    [] =>
+      Ok env;
+    stmt :: rest =>
+      match checkStmt stmt env {
+        Ok env_1 =>
+          checkSeq rest env_1;
+        Error err =>
+          Error err;
+      };
+  };
+
+# checkProgram :: Program -> Result Unit TypeError
+let checkProgram program =
+  match program {
+    Program stmts =>
+      match checkSeq stmts [[]] {
+        Ok _ =>
+          Ok unit;
+        Error err =>
+          Error err;
+      };
+  };
