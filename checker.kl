@@ -1,0 +1,172 @@
+include "common.kl";
+
+type Type
+  = NumberType
+  | BoolType
+  | StringType
+  | NullType
+  | FnType [Type] Type
+  | RecordType [(String Type)];
+
+let typePairEquals pair =
+  typeEquals (fst pair) (last pair);
+  
+let typeEquals left right =
+  match left, right {
+    NumberType, NumberType =>
+      true;
+    BoolType, BoolType =>
+      true;
+    StringType, StringType =>
+      true;
+    NullType, NullType =>
+      true;
+    FnType ps1 ret1, FnType ps2 ret2 =>
+      (length ps1 == length ps2)
+      && all (map typePairEquals (zip ps1 ps2))
+      && typeEquals ret1 ret2;
+    RecordType, RecordType =>
+      true;
+    _, _ =>
+      false;
+  };
+
+type alias Binding =
+  {name: String, typ: Type};
+
+# env :: [[Binding]]
+let emptyEnv = [[]];
+
+# push :: [[Binding]] -> [[Binding]]
+let push env =
+  append env emptyEnv;
+
+# local :: [[Binding]] -> [String]
+let local env =
+  map (fn binding => binding.name) (last env);
+
+# addBinding :: [[Binding]] -> String -> Type -> [[Binding]]
+let addBinding env name typ =
+  let newInnermost = append (last env) [{name = name, typ = typ}]
+    in
+  append (init env) [newInnermost]; 
+
+# lookupScope :: [Binding] -> String -> Option Type
+let lookupScope scope name =
+  match scope {
+    [] =>
+      None;
+    binding :: rest =>
+      if binding.name == name then
+        Some binding.typ
+      else
+        lookupScope rest name;
+  };
+
+# lookup :: [[Binding]] -> String -> Option Type
+let lookup env name =
+  lookupScope (last env) name;
+
+type Op
+  = NegateOp
+  | NotOp
+  | AddOp
+  | SubOp
+  | MulOp
+  | DivOp
+  | ConcatOp
+  | LtOp
+  | LteOp
+  | GtOp
+  | GteOp
+  | EqOp
+  | NotEqOp
+  | AndOp
+  | OrOp;
+
+type Expr
+  = NumberExpr Float
+  | BoolExpr Bool
+  | StringExpr String
+  | NullExpr
+  | VarExpr String
+  | AssignExpr String Expr
+  | BinExpr Op Expr Expr
+  | UnaryExpr Op Expr;
+
+# typeOf :: Expr -> [[Binding]] -> Option Type 
+let typeOf expr env =
+  match expr {
+    NumberExpr _ =>
+      Some NumberType;
+    BoolExpr _ =>
+      Some BoolType;
+    StringExpr _ =>
+      Some StringType;
+    NullExpr =>
+      Some NullType;
+    VarExpr name =>
+      lookup env name;
+    AssignExpr name e =>
+      match lookup env name, typeOf e env {
+        Some t1, Some t2 =>
+          if typeEquals t1 t2 then
+            Some t1
+          else
+            None;
+        _, _ =>
+          None;
+      };
+    UnaryExpr op e =>
+      match op, typeOf e env {
+        NegateOp, NumberType =>
+          Some NumberType;
+        NotOp, BoolType =>
+          Some BoolType;
+        _, _ =>
+          None;
+      };
+    BinExpr op e1 e2 =>
+      match op, typeOf e1 env, typeOf e2 env {
+        AddOp, NumberType, NumberType =>
+          Some NumberType;
+        SubOp, NumberType, NumberType =>
+          Some NumberType;
+        MulOp, NumberType, NumberType =>
+          Some NumberType;
+        DivOp, NumberType, NumberType =>
+          Some NumberType;
+        ConcatOp, StringType, StringType =>
+          Some StringType;
+        LtOp, NumberType, NumberType =>
+          Some NumberType;
+        LteOp, NumberType, NumberType =>
+          Some NumberType;
+        GtOp, NumberType, NumberType =>
+          Some NumberType;
+        GteOp, NumberType, NumberType =>
+          Some BoolType;
+        EqOp, NumberType, NumberType =>
+          Some BoolType;
+        EqOp, BoolType, BoolType =>
+          Some BoolType;
+        EqOp, StringType, StringType =>
+          Some BoolType;
+        EqOp, NullType, NullType =>
+          Some BoolType;
+        NotEqOp, NumberType, NumberType =>
+          Some BoolType;
+        NotEqOp, BoolType, BoolType =>
+          Some BoolType;
+        NotEqOp, StringType, StringType =>
+          Some BoolType;
+        NotEqOp, NullType, NullType =>
+          Some BoolType;
+        AndOp, BoolType, BoolType =>
+          Some BoolType;
+        OrOp, BoolType, BoolType =>
+          Some BoolType;
+        _, _, _ =>
+          None;
+      };
+  };
