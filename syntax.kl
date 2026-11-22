@@ -2,11 +2,11 @@ type Parser a
   = Failed 
   | Parsed a String;
 
-type alias Binding 
-  = {name: String, typ: Type};
+type alias Binding =
+  {name: String, typ: Type};
 
-type alias BindingExpr
-  = {name: String, expr: Expr};
+type alias FieldType =
+  {name: String, typ: Type};
 
 type Type
   = NumberType
@@ -14,7 +14,7 @@ type Type
   | StringType
   | NullType
   | FnType [Type] Type
-  | RecordType [Binding];
+  | RecordType [FieldType];
 
 type Op
   = NegateOp
@@ -33,17 +33,22 @@ type Op
   | AndOp
   | OrOp;
 
+type alias FieldExpr =
+  {name: String, expr: Expr};
+  
 type Expr
   = NumberExpr Float
   | BoolExpr Bool
   | StringExpr String
-  | VarExpr String
   | NullExpr
-  | FnExpr [Binding] Type Expr
-  | RecordExpr [BindingExpr]
-  | LetExpr String (Option Type) Expr
-  | IfExpr Bool Expr Expr
-  | While Bool Expr
+  | VarExpr String
   | AssignExpr String Expr
   | BinExpr Op Expr Expr
-  | UnaryExpr Op Expr;
+  | UnaryExpr Op Expr
+  | FnExpr [Binding] Type Expr
+  | AppExpr Expr Expr
+  | RecordExpr [FieldExpr]
+  | FieldAccessExpr Expr String
+  | LetExpr String (Option Type) Expr
+  | IfExpr Bool Expr Expr
+  | While Bool Expr;
